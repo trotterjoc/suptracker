@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import AddSupplementModal from '@/components/AddSupplementModal'
 import SupplementCard from '@/components/SupplementCard'
 import ProgressRing from '@/components/ProgressRing'
+import StreakBadge from '@/components/StreakBadge'
 
 export type TimeOfDay = 'morning' | 'afternoon' | 'night'
 
@@ -37,6 +38,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [activeTime, setActiveTime] = useState<TimeOfDay>('morning')
+  const [streak, setStreak] = useState(0)
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -52,6 +54,34 @@ export default function Home() {
     fetchData()
   }, [])
 
+  const calculateStreak = async () => {
+    const { data: allLogs } = await supabase
+      .from('daily_logs')
+      .select('log_date')
+      .order('log_date', { ascending: false })
+
+    if (!allLogs || allLogs.length === 0) { setStreak(0); return }
+
+    const uniqueDates = [...new Set(allLogs.map(l => l.log_date))] as string[]
+    uniqueDates.sort((a, b) => b.localeCompare(a))
+
+    let count = 0
+    const todayDate = new Date()
+    todayDate.setHours(0, 0, 0, 0)
+
+    for (let i = 0; i < uniqueDates.length; i++) {
+      const logDate = new Date(uniqueDates[i] + 'T00:00:00')
+      const diffDays = Math.round((todayDate.getTime() - logDate.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays === i) {
+        count++
+      } else {
+        break
+      }
+    }
+
+    setStreak(count)
+  }
+
   const fetchData = async () => {
     setLoading(true)
     const [{ data: sups }, { data: dailyLogs }] = await Promise.all([
@@ -60,6 +90,7 @@ export default function Home() {
     ])
     setSupplements(sups || [])
     setLogs(dailyLogs || [])
+    await calculateStreak()
     setLoading(false)
   }
 
@@ -74,7 +105,10 @@ export default function Home() {
         .insert({ supplement_id: supplement.id, log_date: today })
         .select()
         .single()
-      if (data) setLogs([...logs, data])
+      if (data) {
+        setLogs(prev => [...prev, data])
+        await calculateStreak()
+      }
     }
   }
 
@@ -106,6 +140,7 @@ export default function Home() {
             <p className="text-xs text-white/40 mt-0.5">{dateLabel}</p>
           </div>
           <div className="flex items-center gap-3">
+            <StreakBadge streak={streak} />
             {totalCount > 0 && (
               <div className="flex items-center gap-2">
                 <ProgressRing pct={pct} size={40} />
